@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# TypeScript
+*.tsbuildinfo
+
+# Source maps
+**/*.map
+
+# Transpiled JS from TS/Vue (keep sources as .ts/.vue)
+src/**/*.js
+src/**/*.vue.js
+
+# Env & logs
+.env
+.env.local
+*.log
+
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
