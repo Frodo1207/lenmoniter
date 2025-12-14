@@ -2,7 +2,7 @@
   <div class="selector-container">
     <div class="section-title">指标选择</div>
     <div class="tree-wrapper">
-      <div v-for="dev in devices" :key="dev.id" class="device-group">
+      <div v-for="dev in visibleDevices" :key="dev.id" class="device-group">
         <div class="tree-node device-node" @click="toggle(dev.id)">
           <span class="icon">{{ expanded[dev.id] ? '▼' : '▶' }}</span>
           <span class="label">{{ dev.name }}</span>
@@ -46,9 +46,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, computed } from 'vue'
 import { getMetricTree, MetricTreeDevice, toMetricId } from '../services/mock'
 
+const props = defineProps<{ deviceId?: string }>()
 const devices = ref<MetricTreeDevice[]>([])
 const localSelected = ref<string[]>([])
 const expanded = reactive<Record<string, boolean>>({})
@@ -74,6 +75,11 @@ function clear() {
 }
 
 defineExpose({ toMetricId })
+
+const visibleDevices = computed(() => {
+  if (!props.deviceId) return devices.value
+  return devices.value.filter(d => d.id === props.deviceId)
+})
 </script>
 
 <style scoped>

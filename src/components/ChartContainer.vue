@@ -16,14 +16,43 @@
     </div>
     
     <div class="chart-footer">
-      <EventTimeline :events="events" :start="timeRange.start" :end="timeRange.end" />
+      <div class="footer-row">
+        <EventTimeline 
+          :events="visibleEvents" 
+          :start="currentZoomRange?.start ?? timeRange.start" 
+          :end="currentZoomRange?.end ?? timeRange.end" 
+        />
+        <button class="btn small" @click.stop="expanded = !expanded" :disabled="visibleEvents.length === 0">
+          <span v-if="!expanded">展开事件</span>
+          <span v-else>收起事件</span>
+          <span class="count-badge" v-if="visibleEvents.length > 0">{{ visibleEvents.length }}</span>
+        </button>
+      </div>
+      <div v-if="expanded" class="event-panel">
+        <div class="event-timeline-list">
+          <div class="event-timeline-item" v-for="e in visibleEvents" :key="'ev-' + e.id">
+            <div class="timeline-left">
+              <div class="timeline-dot" :class="e.category"></div>
+              <div class="timeline-line"></div>
+            </div>
+            <div class="timeline-content">
+              <div class="event-item-header">
+                <span class="time">{{ new Date(e.event_time).toLocaleString() }}</span>
+                <span class="badge" :class="e.category">{{ e.category }}</span>
+              </div>
+              <div class="event-item-title">{{ e.title }}</div>
+              <div class="event-item-desc muted">{{ e.description || '-' }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import * as echarts from 'echarts'
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import { getData, getEvents, EventItem } from '../services/mock'
 import EventTimeline from './EventTimeline.vue'
 
@@ -41,6 +70,17 @@ const emit = defineEmits<{
 const el = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
 const events = ref<EventItem[]>([])
+const expanded = ref(false)
+const currentZoomRange = ref<{start: number; end: number} | null>(null)
+
+const visibleEvents = computed(() => {
+  if (!currentZoomRange.value) return events.value
+  const { start, end } = currentZoomRange.value
+  return events.value.filter(e => {
+    const t = new Date(e.event_time).getTime()
+    return t >= start && t <= end
+  })
+})
 
 async function refresh() {
   if (!chart || props.metricIds.length === 0) {
@@ -53,6 +93,7 @@ async function refresh() {
   
   const { data } = await getData(props.metricIds, props.timeRange.start, props.timeRange.end)
   events.value = await getEvents(props.metricIds.map((id) => id.split('.').slice(0, 2).join('.')), props.timeRange.start, props.timeRange.end)
+  currentZoomRange.value = { start: props.timeRange.start, end: props.timeRange.end }
   const series = props.metricIds.map((id) => ({
     name: id,
     type: 'line' as const,
@@ -91,8 +132,12 @@ async function refresh() {
         return html
       },
     },
-    grid: { left: 10, right: 10, top: 30, bottom: 10, containLabel: true },
+    grid: { left: 10, right: 10, top: 30, bottom: 25, containLabel: true },
     legend: { top: 0, textStyle: { color: '#94a3b8' }, type: 'scroll' },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0, filterMode: 'filter' },
+      { type: 'slider', xAxisIndex: 0, filterMode: 'filter', height: 15, bottom: 5, borderColor: 'transparent', backgroundColor: '#1e293b', fillerColor: 'rgba(59, 130, 246, 0.2)', textStyle: { color: '#94a3b8' } }
+    ],
     xAxis: { 
       type: 'time', 
       axisLine: { lineStyle: { color: '#2e3646' } },
@@ -106,6 +151,34 @@ async function refresh() {
     },
     series,
   })
+  
+  chart.on('dataZoom', () => {
+    if (!chart) return
+    const opt = chart.getOption() as any
+    // dataZoom[0] is usually the first dataZoom component's state
+    // For time axis, startValue/endValue might be timestamps or indices depending on filterMode
+    // But safely, we can rely on the axis extent logic if we access the internal model carefully or use option state
+    // Let's try getting it from the option if updated
+    const startValue = opt.dataZoom?.[0]?.startValue
+    const endValue = opt.dataZoom?.[0]?.endValue
+    
+    if (typeof startValue === 'number' && typeof endValue === 'number') {
+       currentZoomRange.value = { start: startValue, end: endValue }
+    } else {
+       // Fallback: calculate from percentage if values are not present (though usually they are for slider/inside)
+       // Or simpler: assume the chart view is updated and we can't easily get the precise time range from public API
+       // without casting to any to access internal model.
+       // Let's use 'any' cast for getModel as it's the most reliable way for runtime behavior even if private in TS.
+       const model = (chart as any).getModel().getComponent('xAxis', 0)
+       if (model && model.axis) {
+         const start = model.axis.scale.getExtent()[0]
+         const end = model.axis.scale.getExtent()[1]
+         currentZoomRange.value = { start, end }
+       }
+    }
+  })
+
+  if (expanded.value && events.value.length === 0) expanded.value = false
 }
 
 function nearestEvent(ts: number, windowMs: number) {
@@ -128,6 +201,7 @@ onMounted(() => {
   window.addEventListener('resize', () => chart?.resize())
   refresh()
 })
+
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', () => chart?.resize())
@@ -174,5 +248,92 @@ watch(() => [props.metricIds.join(','), props.timeRange.start, props.timeRange.e
 .btn-icon.danger:hover {
   background: rgba(239, 68, 68, 0.2);
   color: #fca5a5;
+}
+
+.chart-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+}
+
+.footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.count-badge {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.event-panel {
+  margin-top: 12px;
+  max-height: 250px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.event-timeline-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-timeline-item {
+  display: flex;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 16px;
+}
+
+.event-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.event-timeline-item:last-child .timeline-line {
+  display: none;
+}
+
+.timeline-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  padding-top: 4px;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--text-secondary);
+  z-index: 2;
+}
+.timeline-dot.fault { background: var(--danger); border-color: rgba(239, 68, 68, 0.3); }
+.timeline-dot.maintenance { background: var(--success); border-color: rgba(16, 185, 129, 0.3); }
+.timeline-dot.calibration { background: var(--warning); border-color: rgba(245, 158, 11, 0.3); }
+.timeline-dot.other { background: var(--primary); border-color: rgba(59, 130, 246, 0.3); }
+
+.timeline-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border);
+  margin-top: 4px;
+  min-height: 10px;
+}
+
+.timeline-content {
+  flex: 1;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
 }
 </style>

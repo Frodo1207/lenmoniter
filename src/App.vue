@@ -1,26 +1,27 @@
 <template>
   <div class="app-layout">
-    <div class="topbar">
-      <div style="font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px;">
-        <span style="color: var(--primary);">Lens</span>Monitor
+  <div class="topbar">
+    <div style="font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px;">
+      <span style="color: var(--primary);">Lens</span>Monitor
+    </div>
+    <div class="tabs" style="margin-left: 32px;">
+      <div class="tab" :class="{ active: tab==='monitor' }" @click="tab='monitor'">
+        <span>数据监控</span>
       </div>
-      <div class="tabs" style="margin-left: 32px;">
-        <div class="tab" :class="{ active: tab==='monitor' }" @click="tab='monitor'">
-          <span>数据监控</span>
-        </div>
-        <div class="tab" :class="{ active: tab==='events' }" @click="tab='events'">
-          <span>事件记录</span>
-        </div>
-        <div class="tab" :class="{ active: tab==='report' }" @click="tab='report'">
-          <span>报告导出</span>
-        </div>
+      <div class="tab" :class="{ active: tab==='events' }" @click="tab='events'">
+        <span>事件记录</span>
+      </div>
+      <div class="tab" :class="{ active: tab==='report' }" @click="tab='report'">
+        <span>报告导出</span>
       </div>
     </div>
+    
+  </div>
 
     <div class="content" v-if="tab==='monitor'">
       <div class="sidebar">
         <div class="sidebar-content">
-          <MetricTreeSelector @addSelected="addToCurrent" @createChart="createChart" />
+          <MetricTreeSelector :device-id="selectedDeviceId" @addSelected="addToCurrent" @createChart="createChart" />
           <div style="margin-top: 16px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">图表列表</div>
           <div class="chart-list">
             <div v-for="(c, i) in charts" :key="c.id" 
@@ -31,22 +32,14 @@
               <div class="chart-list-meta">{{ c.metrics.length }} 个指标</div>
             </div>
           </div>
-          <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border);">
-            <div class="section-title">图表管理</div>
-            <div class="card" style="padding: 12px;">
-              <div style="font-size: 0.9rem; margin-bottom: 12px;">当前选中: <b style="color: var(--text);">图表 {{ current + 1 }}</b></div>
-              <div class="btn-group">
-                <button class="btn secondary" style="flex: 1;" @click="createChart">新建</button>
-                <button class="btn danger" style="flex: 1;" @click="removeChart(current)" :disabled="charts.length===0">删除</button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
       <div class="main">
         <DashboardLayout 
           :charts="charts" 
           :current-index="current"
+          :device-id="selectedDeviceId"
+          @update:device-id="(id: string) => selectedDeviceId = id"
           @update:current-index="(val: number) => current = val"
           @delete-chart="removeChart"
           ref="dashRef" 
@@ -65,8 +58,8 @@
                 <input class="input" v-model="form.title" placeholder="事件标题..." />
               </div>
               <div>
-                <label class="form-label">关联对象 ID</label>
-                <input class="input" v-model="form.ref_id" placeholder="例如 POAM1.Z" />
+                <label class="form-label">机台</label>
+                <input class="input" v-model="form.ref_id" placeholder="例如 POAM1" />
               </div>
               <div>
                 <label class="form-label">分类</label>
@@ -90,22 +83,40 @@
         </div>
       </div>
       <div class="main">
-        <div class="section-title">事件列表</div>
-        <div class="event-list">
-          <div class="card event-card" v-for="e in events" :key="e.id">
-            <div class="event-header">
-              <span class="badge" :class="e.category">{{ e.category }}</span>
-              <span class="event-time">{{ new Date(e.event_time).toLocaleString() }}</span>
-            </div>
-            <div class="event-title">{{ e.title }}</div>
-            <div class="event-ref">Ref: <code>{{ e.ref_id }}</code></div>
-            <div class="event-desc" v-if="e.description">{{ e.description }}</div>
+        <div class="section-title">事件记录</div>
+        <div class="card" style="overflow:auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div class="muted">机台: <b style="color: var(--text);">{{ selectedDeviceId }}</b></div>
+            <div class="muted">时间: {{ new Date(dashRef?.timeRange.start ?? Date.now()).toLocaleString() }} - {{ new Date(dashRef?.timeRange.end ?? Date.now()).toLocaleString() }}</div>
           </div>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="text-align: left;">
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">时间</th>
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">机台</th>
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">分类</th>
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">标题</th>
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">描述</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="e in displayEvents" :key="e.id" style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px;">{{ new Date(e.event_time).toLocaleString() }}</td>
+                <td style="padding: 8px;">{{ e.ref_id.split('.')[0] }}</td>
+                <td style="padding: 8px; text-transform: uppercase;">{{ e.category }}</td>
+                <td style="padding: 8px;">{{ e.title }}</td>
+                <td style="padding: 8px;">{{ e.description || '-' }}</td>
+              </tr>
+              <tr v-if="displayEvents.length === 0">
+                <td colspan="5" class="muted" style="padding: 12px; text-align: center;">当前条件下暂无事件记录</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <div class="content" v-else>
+    <div class="content" v-else-if="tab==='report'">
       <div class="main">
         <div style="max-width: 600px; margin: 0 auto;">
           <div class="section-title">导出报告</div>
@@ -131,14 +142,18 @@
         </div>
       </div>
     </div>
+
+    
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import MetricTreeSelector from './components/MetricTreeSelector.vue'
 import DashboardLayout from './components/DashboardLayout.vue'
 import type { ChartDef } from './components/DashboardLayout.vue'
+import { getDevices, getEvents } from './services/mock'
+import type { Device, EventItem } from './services/mock'
 
 type Tab = 'monitor' | 'events' | 'report'
 const tab = ref<Tab>('monitor')
@@ -147,6 +162,44 @@ const charts = ref<ChartDef[]>([{ id: 'chart-1', metrics: ['POAM1.Z.MA'] }])
 const current = ref(0)
 const currentChartName = computed(() => charts.value[current.value]?.id ?? '（无）')
 const dashRef = ref<InstanceType<typeof DashboardLayout> | null>(null)
+
+const devices = ref<Device[]>([])
+const selectedDeviceId = ref('')
+const eventsTable = ref<EventItem[]>([])
+const displayEvents = computed(() => {
+  const s = dashRef.value?.timeRange.start ?? Date.now() - 60 * 60 * 1000
+  const e = dashRef.value?.timeRange.end ?? Date.now()
+  const local = events.value.filter(ev => {
+    const t = new Date(ev.event_time).getTime()
+    const matchDev = selectedDeviceId.value ? ev.ref_id.startsWith(selectedDeviceId.value) : true
+    return matchDev && t >= s && t <= e
+  })
+  return [...eventsTable.value, ...local]
+})
+
+async function initDevices() {
+  devices.value = await getDevices()
+  if (!selectedDeviceId.value) selectedDeviceId.value = devices.value[0]?.id || ''
+}
+
+async function refreshEventsTable() {
+  const s = dashRef.value?.timeRange.start ?? Date.now() - 60 * 60 * 1000
+  const e = dashRef.value?.timeRange.end ?? Date.now()
+  if (!selectedDeviceId.value) {
+    eventsTable.value = []
+    return
+  }
+  eventsTable.value = await getEvents([selectedDeviceId.value], s, e)
+}
+
+onMounted(async () => {
+  await initDevices()
+  await refreshEventsTable()
+})
+
+watch(() => [selectedDeviceId.value, dashRef.value?.timeRange.start, dashRef.value?.timeRange.end], () => {
+  refreshEventsTable()
+})
 
 function addToCurrent(ids: string[]) {
   if (charts.value.length === 0) createChart()
@@ -176,14 +229,14 @@ function removeChart(index: number) {
 let eventSeq = 100
 const events = ref<Array<{ id: number; title: string; description?: string; ref_id: string; event_time: string; category: string }>>([])
 
-const form = ref({ title: '', description: '', ref_id: 'POAM1.Z', category: 'maintenance' })
+const form = ref({ title: '', description: '', ref_id: 'POAM1', category: 'maintenance' })
 function addEvent() {
   if (!form.value.title.trim()) return
   events.value.push({ id: eventSeq++, title: form.value.title, description: form.value.description, ref_id: form.value.ref_id, category: form.value.category, event_time: new Date().toISOString() })
   resetEventForm()
 }
 function resetEventForm() {
-  form.value = { title: '', description: '', ref_id: 'POAM1.Z', category: 'maintenance' }
+  form.value = { title: '', description: '', ref_id: 'POAM1', category: 'maintenance' }
 }
 
 const exportInfo = ref('')
