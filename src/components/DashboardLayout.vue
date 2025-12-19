@@ -6,6 +6,7 @@
           <div style="display:flex; align-items:center; gap:8px;">
             <span class="muted" style="white-space:nowrap; flex-shrink: 0;">机台</span>
             <select class="select" v-model="localDeviceId" style="width:120px;">
+              <option value="">全部机台</option>
               <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
             </select>
           </div>
@@ -34,17 +35,20 @@
     </div>
     
     <div class="grid-wrapper">
-      <div class="chart-grid">
+      <TransitionGroup name="chart-list" tag="div" class="chart-grid">
         <ChartContainer 
           v-for="(c, i) in charts" 
           :key="c.id" 
-          :metric-ids="c.metrics.filter(m => m.startsWith(deviceId + '.'))" 
+          :metric-ids="deviceId ? c.metrics.filter(m => m.startsWith(deviceId + '.')) : c.metrics" 
           :time-range="activeTimeRange"
           :is-active="i === currentIndex"
           @activate="$emit('update:currentIndex', i)"
           @delete="$emit('deleteChart', i)"
+          @dragstart="onDragStart(i)"
+          @dragenter="onDragEnter(i)"
+          @dragover.prevent
         />
-      </div>
+      </TransitionGroup>
       
       <!-- Loading Overlay -->
       <div v-if="isLoading" class="loading-overlay">
@@ -59,8 +63,8 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import dayjs from 'dayjs'
 import ChartContainer from './ChartContainer.vue'
-import { getDevices } from '../services/mock'
-import type { Device } from '../services/mock'
+import { getDevices } from '../services/request'
+import type { Device } from '../services/request'
 
 export type ChartDef = { id: string; metrics: string[] }
 
@@ -74,6 +78,7 @@ const emit = defineEmits<{
   (e: 'update:currentIndex', idx: number): void;
   (e: 'deleteChart', idx: number): void;
   (e: 'update:deviceId', id: string): void;
+  (e: 'reorder', from: number, to: number): void;
 }>()
 
 // Internal picker state (strings for input)
@@ -82,6 +87,30 @@ const pickerEnd = ref('')
 
 const devices = ref<Device[]>([])
 const localDeviceId = ref(props.deviceId)
+const dragSrcIndex = ref<number | null>(null)
+
+function onDragStart(i: number) {
+  dragSrcIndex.value = i
+}
+
+function onDragEnter(i: number) {
+  if (dragSrcIndex.value !== null && dragSrcIndex.value !== i) {
+    const item = props.charts[dragSrcIndex.value]
+    // We cannot mutate props directly, but wait, charts is a prop ref array object.
+    // Vue 3 props are readonly proxy. We should emit an update or use a local copy.
+    // However, for this specific request, usually we would need to emit 'update:charts'.
+    // But since the parent passed charts as a ref, modifying the array inside *might* work if it's reactive 
+    // but it's bad practice.
+    // Let's check App.vue. It passes :charts="charts".
+    // Better way: emit event to parent to swap.
+    // But for drag sorting, real-time swap is needed.
+    // Let's try to mutate the array via a method exposed or emit.
+    // Actually, simply emitting update won't work well for dragover frequency.
+    // Let's assume we can emit a 'reorder' event.
+    emit('reorder', dragSrcIndex.value, i)
+    dragSrcIndex.value = i
+  }
+}
 
 // Active time range passed to charts
 const activeTimeRange = reactive<{ start: number; end: number }>({ 
@@ -96,7 +125,7 @@ onMounted(() => {
   syncInputs(activeTimeRange.start, activeTimeRange.end)
   getDevices().then(list => {
     devices.value = list
-    if (!localDeviceId.value && list.length > 0) localDeviceId.value = list[0].id
+    // Do not force select first device, allow empty (All)
   })
 })
 

@@ -71,25 +71,55 @@ background-color: var(--bg);
 .tab.active { background: var(--panel); color: var(--primary); shadow: 0 1px 2px rgba(0,0,0,0.2); }
 
 /* Chart & Timeline */
-.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 16px; }
+.chart-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+
+/* FLIP Animations */
+.chart-list-move,
+.chart-list-enter-active,
+.chart-list-leave-active {
+  transition: all 0.5s cubic-bezier(0.55, 0, 0.1, 1);
+}
+.chart-list-enter-from,
+.chart-list-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+.chart-list-leave-active {
+  position: absolute; /* Keep layout stable while item is leaving */
+  z-index: 0;
+}
+
 /* Flex column to fix overflow */
 .chart-box { 
+  flex: 0 0 auto; /* Do not grow, do not shrink automatically based on flex logic */
+  width: 600px;   /* Initial default width */
+  min-width: 400px;
+  max-width: 100%;
   min-height: 420px;
   height: auto;
   display: flex; 
   flex-direction: column; 
   padding: 0; /* Let children handle padding */
-  overflow: visible;
+  overflow: hidden; /* Use hidden to prevent scrollbars during resize, content scrolls inside chart-body if needed */
   background: linear-gradient(180deg, var(--panel) 0%, #11141a 100%);
+  resize: both;
+  position: relative;
 }
 .chart-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center;
   background: rgba(255,255,255,0.02);
+  flex-shrink: 0;
 }
-.chart-body { height: 320px; flex: none; position: relative; } /* Fixed height for chart area */
-.chart-footer { padding: 12px 16px; border-top: 1px solid var(--border); background: #13161c; }
+.chart-body { 
+  flex: 1; 
+  min-height: 320px; 
+  position: relative; 
+  width: 100%; 
+  overflow: hidden; /* Ensure canvas doesn't overflow */
+}
+.chart-footer { padding: 12px 16px; border-top: 1px solid var(--border); background: #13161c; flex-shrink: 0; }
 
 .muted { color: var(--text-secondary); }
 .tag { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; background: #374151; color: #d1d5db; }

@@ -21,7 +21,7 @@
     <div class="content" v-if="tab==='monitor'">
       <div class="sidebar">
         <div class="sidebar-content">
-          <MetricTreeSelector :device-id="selectedDeviceId" @addSelected="addToCurrent" @createChart="createChart" />
+          <MetricTreeSelector @addSelected="addToCurrent" @createChart="createChart" />
           <div style="margin-top: 16px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">图表列表</div>
           <div class="chart-list">
             <div v-for="(c, i) in charts" :key="c.id" 
@@ -42,6 +42,7 @@
           @update:device-id="(id: string) => selectedDeviceId = id"
           @update:current-index="(val: number) => current = val"
           @delete-chart="removeChart"
+          @reorder="reorderCharts"
           ref="dashRef" 
         />
       </div>
@@ -50,7 +51,7 @@
     <div class="content" v-else-if="tab==='events'">
       <div class="sidebar">
         <div class="sidebar-content">
-          <div class="section-title">录入事件</div>
+          <div class="section-title">{{ editingEventId ? '编辑事件' : '录入事件' }}</div>
           <div class="card">
             <div style="display:flex; flex-direction: column; gap:12px;">
               <div>
@@ -75,8 +76,9 @@
                 <textarea class="input" v-model="form.description" rows="3" placeholder="可选详细描述..."></textarea>
               </div>
               <div class="btn-group" style="margin-top: 4px;">
-                <button class="btn" style="flex: 1;" @click="addEvent">添加</button>
+                <button class="btn" style="flex: 1;" @click="submitEvent">{{ editingEventId ? '保存' : '添加' }}</button>
                 <button class="btn secondary" @click="resetEventForm">重置</button>
+                <button v-if="editingEventId" class="btn danger" @click="cancelEdit">取消</button>
               </div>
             </div>
           </div>
@@ -86,7 +88,13 @@
         <div class="section-title">事件记录</div>
         <div class="card" style="overflow:auto;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div class="muted">机台: <b style="color: var(--text);">{{ selectedDeviceId }}</b></div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="muted" style="white-space:nowrap;">筛选机台:</span>
+              <select class="select" v-model="filterDeviceId" style="width:140px;">
+                <option value="">全部机台</option>
+                <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.name }}</option>
+              </select>
+            </div>
             <div class="muted">时间: {{ new Date(dashRef?.timeRange.start ?? Date.now()).toLocaleString() }} - {{ new Date(dashRef?.timeRange.end ?? Date.now()).toLocaleString() }}</div>
           </div>
           <table style="width: 100%; border-collapse: collapse;">
@@ -97,6 +105,7 @@
                 <th style="padding: 8px; border-bottom: 1px solid var(--border);">分类</th>
                 <th style="padding: 8px; border-bottom: 1px solid var(--border);">标题</th>
                 <th style="padding: 8px; border-bottom: 1px solid var(--border);">描述</th>
+                <th style="padding: 8px; border-bottom: 1px solid var(--border);">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -106,9 +115,12 @@
                 <td style="padding: 8px; text-transform: uppercase;">{{ e.category }}</td>
                 <td style="padding: 8px;">{{ e.title }}</td>
                 <td style="padding: 8px;">{{ e.description || '-' }}</td>
+                <td style="padding: 8px;">
+                  <button class="btn small secondary" @click="editEvent(e)">编辑</button>
+                </td>
               </tr>
               <tr v-if="displayEvents.length === 0">
-                <td colspan="5" class="muted" style="padding: 12px; text-align: center;">当前条件下暂无事件记录</td>
+                <td colspan="6" class="muted" style="padding: 12px; text-align: center;">当前条件下暂无事件记录</td>
               </tr>
             </tbody>
           </table>
@@ -128,7 +140,7 @@
             
             <div style="margin-bottom: 16px;">
               <div style="font-weight: 500; margin-bottom: 4px;">摘要</div>
-              <div class="muted">{{ charts.length }} 个图表, {{ events.length }} 条相关事件</div>
+              <div class="muted">{{ charts.length }} 个图表, {{ displayEvents.length }} 条相关事件</div>
             </div>
 
             <div class="btn-group">
@@ -152,8 +164,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import MetricTreeSelector from './components/MetricTreeSelector.vue'
 import DashboardLayout from './components/DashboardLayout.vue'
 import type { ChartDef } from './components/DashboardLayout.vue'
-import { getDevices, getEvents } from './services/mock'
-import type { Device, EventItem } from './services/mock'
+import { createEvent, createReport, getDevices, getEvents, updateEvent } from './services/request'
+import type { Device, EventItem } from './services/request'
 
 type Tab = 'monitor' | 'events' | 'report'
 const tab = ref<Tab>('monitor')
@@ -165,31 +177,32 @@ const dashRef = ref<InstanceType<typeof DashboardLayout> | null>(null)
 
 const devices = ref<Device[]>([])
 const selectedDeviceId = ref('')
+const filterDeviceId = ref('')
 const eventsTable = ref<EventItem[]>([])
 const displayEvents = computed(() => {
   const s = dashRef.value?.timeRange.start ?? Date.now() - 60 * 60 * 1000
   const e = dashRef.value?.timeRange.end ?? Date.now()
-  const local = events.value.filter(ev => {
+  return eventsTable.value.filter(ev => {
     const t = new Date(ev.event_time).getTime()
-    const matchDev = selectedDeviceId.value ? ev.ref_id.startsWith(selectedDeviceId.value) : true
+    const matchDev = filterDeviceId.value ? ev.ref_id.startsWith(filterDeviceId.value) : true
     return matchDev && t >= s && t <= e
   })
-  return [...eventsTable.value, ...local]
 })
 
 async function initDevices() {
   devices.value = await getDevices()
-  if (!selectedDeviceId.value) selectedDeviceId.value = devices.value[0]?.id || ''
+  // Default to empty (All) or keep existing logic if needed, but user wants default All
+  if (selectedDeviceId.value === undefined) selectedDeviceId.value = ''
 }
 
 async function refreshEventsTable() {
   const s = dashRef.value?.timeRange.start ?? Date.now() - 60 * 60 * 1000
   const e = dashRef.value?.timeRange.end ?? Date.now()
-  if (!selectedDeviceId.value) {
-    eventsTable.value = []
-    return
-  }
-  eventsTable.value = await getEvents([selectedDeviceId.value], s, e)
+  // Use filterDeviceId if present, otherwise fetch all relevant to charts maybe? 
+  // For now fetch all or based on filterDeviceId if set. If empty, maybe fetch all devices?
+  // getEvents supports array of refIds.
+  const targetIds = filterDeviceId.value ? [filterDeviceId.value] : []
+  eventsTable.value = await getEvents(targetIds, s, e)
 }
 
 onMounted(async () => {
@@ -197,7 +210,7 @@ onMounted(async () => {
   await refreshEventsTable()
 })
 
-watch(() => [selectedDeviceId.value, dashRef.value?.timeRange.start, dashRef.value?.timeRange.end], () => {
+watch(() => [filterDeviceId.value, dashRef.value?.timeRange.start, dashRef.value?.timeRange.end], () => {
   refreshEventsTable()
 })
 
@@ -225,23 +238,85 @@ function removeChart(index: number) {
   }
 }
 
-// events mock storage
-let eventSeq = 100
-const events = ref<Array<{ id: number; title: string; description?: string; ref_id: string; event_time: string; category: string }>>([])
+function reorderCharts(from: number, to: number) {
+  const item = charts.value[from]
+  charts.value.splice(from, 1)
+  charts.value.splice(to, 0, item)
+  // If moving the current active chart, update index
+  if (current.value === from) {
+    current.value = to
+  } else if (current.value > from && current.value <= to) {
+    current.value--
+  } else if (current.value < from && current.value >= to) {
+    current.value++
+  }
+}
+
+const editingEventId = ref<number | null>(null)
 
 const form = ref({ title: '', description: '', ref_id: 'POAM1', category: 'maintenance' })
-function addEvent() {
+
+async function submitEvent() {
   if (!form.value.title.trim()) return
-  events.value.push({ id: eventSeq++, title: form.value.title, description: form.value.description, ref_id: form.value.ref_id, category: form.value.category, event_time: new Date().toISOString() })
+  
+  try {
+    if (editingEventId.value !== null) {
+      // Update
+      await updateEvent(editingEventId.value, {
+        title: form.value.title,
+        description: form.value.description,
+        ref_id: form.value.ref_id,
+        category: form.value.category as EventItem['category'],
+      })
+      // Clear editing state
+      editingEventId.value = null
+    } else {
+      // Create
+      await createEvent({
+        title: form.value.title,
+        description: form.value.description,
+        ref_id: form.value.ref_id,
+        category: form.value.category as EventItem['category'],
+        event_time: new Date().toISOString(),
+      })
+    }
+    await refreshEventsTable()
+  } catch (err) {
+    alert(String(err))
+  }
   resetEventForm()
 }
+
+function editEvent(e: EventItem | { id: number; title: string; description?: string; ref_id: string; event_time: string; category: string }) {
+  editingEventId.value = e.id
+  form.value = {
+    title: e.title,
+    description: e.description || '',
+    ref_id: e.ref_id,
+    category: e.category as string
+  }
+}
+
+function cancelEdit() {
+  editingEventId.value = null
+  resetEventForm()
+}
+
 function resetEventForm() {
   form.value = { title: '', description: '', ref_id: 'POAM1', category: 'maintenance' }
 }
 
 const exportInfo = ref('')
-function exportReport() {
-  exportInfo.value = `报告生成成功（Mock）：包含 ${charts.value.length} 个图表，时间窗 ${new Date(dashRef.value?.timeRange.start ?? Date.now()).toLocaleTimeString()} - ${new Date(dashRef.value?.timeRange.end ?? Date.now()).toLocaleTimeString()}`
+async function exportReport() {
+  const start = dashRef.value?.timeRange.start ?? Date.now() - 10 * 60_000
+  const end = dashRef.value?.timeRange.end ?? Date.now()
+  const res = await createReport({
+    start,
+    end,
+    deviceId: selectedDeviceId.value || undefined,
+    charts: charts.value.map(c => ({ id: c.id, metrics: c.metrics })),
+  })
+  exportInfo.value = res.summary
 }
 </script>
 

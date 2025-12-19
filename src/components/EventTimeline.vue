@@ -25,7 +25,7 @@
 
 <script setup lang="ts">
 import dayjs from 'dayjs'
-import type { EventItem } from '../services/mock'
+import type { EventItem } from '../services/request'
 
 const props = defineProps<{ events: EventItem[]; start: number; end: number }>()
 

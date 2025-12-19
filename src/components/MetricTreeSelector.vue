@@ -10,23 +10,13 @@
         </div>
         
         <div v-show="expanded[dev.id]" class="tree-children">
-          <div v-for="ax in dev.axes" :key="ax.id" class="axis-group">
-            <div class="tree-node axis-node">
-              <span class="icon">└</span>
-              <span class="label">{{ ax.name }}</span>
-              <span class="muted code">{{ ax.id }}</span>
-            </div>
-            
-            <div class="tree-children">
-              <div v-for="m in ax.metrics" :key="m.id" class="metric-node">
-                <label class="custom-checkbox">
-                  <input type="checkbox" :value="toMetricId(dev.id, ax.id, m.id)" v-model="localSelected" />
-                  <span class="checkmark"></span>
-                  <span class="metric-name">{{ m.name }}</span>
-                  <span class="metric-code">{{ toMetricId(dev.id, ax.id, m.id) }}</span>
-                </label>
-              </div>
-            </div>
+          <div v-for="m in dev.metrics" :key="m.id" class="metric-node">
+            <label class="custom-checkbox">
+              <input type="checkbox" :value="toMetricId(dev.id, m.id)" v-model="localSelected" />
+              <span class="checkmark"></span>
+              <span class="metric-name">{{ m.axisName }} · {{ m.name }}</span>
+              <span class="metric-code">{{ toMetricId(dev.id, m.id) }}</span>
+            </label>
           </div>
         </div>
       </div>
@@ -47,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed } from 'vue'
-import { getMetricTree, MetricTreeDevice, toMetricId } from '../services/mock'
+import { getMetricTree, MetricTreeDevice, toMetricId } from '../services/request'
 
 const props = defineProps<{ deviceId?: string }>()
 const devices = ref<MetricTreeDevice[]>([])
@@ -121,18 +111,12 @@ const visibleDevices = computed(() => {
 }
 .device-node:hover { background: rgba(255, 255, 255, 0.08); }
 
-.axis-node {
-  padding: 6px 12px 6px 20px;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
 .tree-children {
   
 }
 
 .metric-node {
-  padding: 4px 12px 4px 36px;
+  padding: 4px 12px 4px 20px;
 }
 
 .custom-checkbox {

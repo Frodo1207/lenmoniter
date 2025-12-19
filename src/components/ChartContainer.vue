@@ -1,5 +1,11 @@
 <template>
-  <div class="card chart-box" :class="{ active: isActive }" @click="$emit('activate')">
+  <div 
+    class="card chart-box" 
+    :class="{ active: isActive }" 
+    @click="$emit('activate')"
+    :draggable="canDrag"
+    @mousedown="checkDrag"
+  >
     <div class="chart-header">
       <div style="font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px;">
         <span class="tag" v-if="metricIds.length > 0">{{ metricIds.length }} 指标</span>
@@ -12,7 +18,7 @@
     </div>
     
     <div class="chart-body">
-      <div ref="el" style="width: 100%; height: 100%;"></div>
+      <div ref="el" class="chart-el"></div>
     </div>
     
     <div class="chart-footer">
@@ -37,6 +43,7 @@
             </div>
             <div class="timeline-content">
               <div class="event-item-header">
+                <span class="device-tag">{{ e.ref_id.split('.')[0] }}</span>
                 <span class="time">{{ new Date(e.event_time).toLocaleString() }}</span>
                 <span class="badge" :class="e.category">{{ e.category }}</span>
               </div>
@@ -53,7 +60,7 @@
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
-import { getData, getEvents, EventItem } from '../services/mock'
+import { getData, getEvents, EventItem } from '../services/request'
 import EventTimeline from './EventTimeline.vue'
 
 const props = defineProps<{ 
@@ -72,6 +79,17 @@ let chart: echarts.ECharts | null = null
 const events = ref<EventItem[]>([])
 const expanded = ref(false)
 const currentZoomRange = ref<{start: number; end: number} | null>(null)
+const canDrag = ref(false)
+
+function checkDrag(e: MouseEvent) {
+  // Only allow drag if clicking on header but NOT on buttons/inputs
+  const target = e.target as HTMLElement
+  if (target.closest('.chart-header') && !target.closest('button') && !target.closest('input')) {
+    canDrag.value = true
+  } else {
+    canDrag.value = false
+  }
+}
 
 const visibleEvents = computed(() => {
   if (!currentZoomRange.value) return events.value
@@ -88,97 +106,122 @@ async function refresh() {
     return
   }
   
-  // Resize chart to fit new container size before rendering
-  chart.resize()
-  
-  const { data } = await getData(props.metricIds, props.timeRange.start, props.timeRange.end)
-  events.value = await getEvents(props.metricIds.map((id) => id.split('.').slice(0, 2).join('.')), props.timeRange.start, props.timeRange.end)
-  currentZoomRange.value = { start: props.timeRange.start, end: props.timeRange.end }
-  const series = props.metricIds.map((id) => ({
-    name: id,
-    type: 'line' as const,
-    showSymbol: false,
-    smooth: true,
-    lineStyle: { width: 2 },
-    data: data[id]?.map((p) => [p.t, p.v]) ?? [],
-  }))
-  
-  chart.setOption({
-    animation: true,
-    animationDuration: 300,
-    backgroundColor: 'transparent',
-    color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(21, 25, 33, 0.9)',
-      borderColor: '#2e3646',
-      textStyle: { color: '#e2e8f0' },
-      formatter: (params: any) => {
-        const ts = params[0]?.data?.[0] ?? props.timeRange.start
-        const near = nearestEvent(ts, 30000)
-        let html = `<div style="font-size:12px; color:#94a3b8; margin-bottom:4px;">${new Date(ts).toLocaleString()}</div>`
-        params.forEach((p: any) => {
-          html += `<div style="display:flex; justify-content:space-between; gap:12px; align-items:center;">
-            <span style="display:flex; align-items:center; gap:4px;"><span style="width:8px; height:8px; border-radius:50%; background:${p.color}"></span>${p.seriesName}</span>
-            <b style="font-family:monospace;">${p.data[1]}</b>
-          </div>`
-        })
-        if (near) {
-          html += `<div style="margin-top:8px; padding-top:8px; border-top:1px solid #2e3646; color:#f59e0b;">
-            <div style="font-weight:600; display:flex; align-items:center; gap:4px;">⚠️ ${near.title}</div>
-            <div style="font-size:11px; opacity:0.8;">[${near.category}] ${new Date(near.event_time).toLocaleTimeString()}</div>
-          </div>`
-        }
-        return html
-      },
-    },
-    grid: { left: 10, right: 10, top: 30, bottom: 25, containLabel: true },
-    legend: { top: 0, textStyle: { color: '#94a3b8' }, type: 'scroll' },
-    dataZoom: [
-      { type: 'inside', xAxisIndex: 0, filterMode: 'filter' },
-      { type: 'slider', xAxisIndex: 0, filterMode: 'filter', height: 15, bottom: 5, borderColor: 'transparent', backgroundColor: '#1e293b', fillerColor: 'rgba(59, 130, 246, 0.2)', textStyle: { color: '#94a3b8' } }
-    ],
-    xAxis: { 
-      type: 'time', 
-      axisLine: { lineStyle: { color: '#2e3646' } },
-      axisLabel: { color: '#94a3b8', formatter: '{HH}:{mm}' },
-      splitLine: { show: false }
-    },
-    yAxis: { 
-      type: 'value', 
-      splitLine: { lineStyle: { color: '#2e3646', type: 'dashed' } },
-      axisLabel: { color: '#94a3b8' }
-    },
-    series,
-  })
-  
-  chart.on('dataZoom', () => {
-    if (!chart) return
-    const opt = chart.getOption() as any
-    // dataZoom[0] is usually the first dataZoom component's state
-    // For time axis, startValue/endValue might be timestamps or indices depending on filterMode
-    // But safely, we can rely on the axis extent logic if we access the internal model carefully or use option state
-    // Let's try getting it from the option if updated
-    const startValue = opt.dataZoom?.[0]?.startValue
-    const endValue = opt.dataZoom?.[0]?.endValue
-    
-    if (typeof startValue === 'number' && typeof endValue === 'number') {
-       currentZoomRange.value = { start: startValue, end: endValue }
-    } else {
-       // Fallback: calculate from percentage if values are not present (though usually they are for slider/inside)
-       // Or simpler: assume the chart view is updated and we can't easily get the precise time range from public API
-       // without casting to any to access internal model.
-       // Let's use 'any' cast for getModel as it's the most reliable way for runtime behavior even if private in TS.
-       const model = (chart as any).getModel().getComponent('xAxis', 0)
-       if (model && model.axis) {
-         const start = model.axis.scale.getExtent()[0]
-         const end = model.axis.scale.getExtent()[1]
-         currentZoomRange.value = { start, end }
-       }
-    }
-  })
+  try {
+    chart.resize()
 
-  if (expanded.value && events.value.length === 0) expanded.value = false
+    const { data } = await getData(props.metricIds, props.timeRange.start, props.timeRange.end)
+    events.value = await getEvents(props.metricIds.map((id) => id.split('.').slice(0, 2).join('.')), props.timeRange.start, props.timeRange.end)
+    currentZoomRange.value = { start: props.timeRange.start, end: props.timeRange.end }
+    const markLineData = events.value.map(e => ({
+      xAxis: new Date(e.event_time).getTime(),
+      label: { formatter: '{b}', position: 'end' },
+      lineStyle: { 
+        color: e.category === 'fault' ? '#ef4444' : 
+               e.category === 'maintenance' ? '#10b981' : 
+               e.category === 'calibration' ? '#f59e0b' : '#3b82f6',
+        type: 'dashed',
+        width: 1
+      },
+      tooltip: {
+         formatter: (p: any) => {
+           return `
+             <div style="font-weight:600; color:${p.color}">⚠️ ${e.title}</div>
+             <div style="font-size:11px; margin-top:2px; opacity:0.9;">机台: ${e.ref_id.split('.')[0]}</div>
+             <div style="font-size:11px; opacity:0.8;">${new Date(e.event_time).toLocaleString()}</div>
+           `
+         }
+       }
+     }))
+
+    const series = props.metricIds.map((id, index) => ({
+      name: id,
+      type: 'line' as const,
+      showSymbol: false,
+      smooth: true,
+      lineStyle: { width: 2 },
+      data: data[id]?.map((p) => [p.t, p.v]) ?? [],
+      markLine: index === 0 && markLineData.length > 0 ? {
+        symbol: ['none', 'none'],
+        label: { show: false },
+        data: markLineData,
+        silent: false
+      } : undefined
+    }))
+  
+    chart.setOption({
+      animation: true,
+      animationDuration: 300,
+      backgroundColor: 'transparent',
+      color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(21, 25, 33, 0.9)',
+        borderColor: '#2e3646',
+        textStyle: { color: '#e2e8f0' },
+        formatter: (params: any) => {
+          const ts = params[0]?.data?.[0] ?? props.timeRange.start
+          const near = nearestEvent(ts, 30000)
+          let html = `<div style="font-size:12px; color:#94a3b8; margin-bottom:4px;">${new Date(ts).toLocaleString()}</div>`
+          params.forEach((p: any) => {
+            html += `<div style="display:flex; justify-content:space-between; gap:12px; align-items:center;">
+              <span style="display:flex; align-items:center; gap:4px;"><span style="width:8px; height:8px; border-radius:50%; background:${p.color}"></span>${p.seriesName}</span>
+              <b style="font-family:monospace;">${p.data[1]}</b>
+            </div>`
+          })
+          if (near) {
+            html += `<div style="margin-top:8px; padding-top:8px; border-top:1px solid #2e3646; color:#f59e0b;">
+              <div style="font-weight:600; display:flex; align-items:center; gap:4px;">⚠️ ${near.title}</div>
+              <div style="font-size:11px; opacity:0.8;">[${near.category}] ${new Date(near.event_time).toLocaleTimeString()}</div>
+            </div>`
+          }
+          return html
+        },
+      },
+      grid: { left: 10, right: 10, top: 30, bottom: 25, containLabel: true },
+      legend: { top: 0, textStyle: { color: '#94a3b8' }, type: 'scroll' },
+      dataZoom: [
+        { type: 'inside', xAxisIndex: 0, filterMode: 'filter' },
+        { type: 'slider', xAxisIndex: 0, filterMode: 'filter', height: 15, bottom: 5, borderColor: 'transparent', backgroundColor: '#1e293b', fillerColor: 'rgba(59, 130, 246, 0.2)', textStyle: { color: '#94a3b8' } }
+      ],
+      xAxis: { 
+        type: 'time', 
+        axisLine: { lineStyle: { color: '#2e3646' } },
+        axisLabel: { color: '#94a3b8', formatter: '{HH}:{mm}' },
+        splitLine: { show: false }
+      },
+      yAxis: { 
+        type: 'value', 
+        splitLine: { lineStyle: { color: '#2e3646', type: 'dashed' } },
+        axisLabel: { color: '#94a3b8' }
+      },
+      series,
+    }, { notMerge: true })
+  
+    chart.off('dataZoom')
+    chart.on('dataZoom', () => {
+      if (!chart) return
+      const opt = chart.getOption() as any
+      const startValue = opt.dataZoom?.[0]?.startValue
+      const endValue = opt.dataZoom?.[0]?.endValue
+      
+      if (typeof startValue === 'number' && typeof endValue === 'number') {
+         currentZoomRange.value = { start: startValue, end: endValue }
+      } else {
+         const model = (chart as any).getModel().getComponent('xAxis', 0)
+         if (model && model.axis) {
+           const start = model.axis.scale.getExtent()[0]
+           const end = model.axis.scale.getExtent()[1]
+           currentZoomRange.value = { start, end }
+         }
+      }
+    })
+
+    if (expanded.value && events.value.length === 0) expanded.value = false
+  } catch {
+    events.value = []
+    expanded.value = false
+    chart.clear()
+  }
 }
 
 function nearestEvent(ts: number, windowMs: number) {
@@ -195,16 +238,41 @@ function nearestEvent(ts: number, windowMs: number) {
   return ret
 }
 
+let resizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   if (!el.value) return
   chart = echarts.init(el.value)
-  window.addEventListener('resize', () => chart?.resize())
+  
+  // Use ResizeObserver to detect container size changes (e.g. grid layout updates)
+  resizeObserver = new ResizeObserver(() => {
+    chart?.resize()
+  })
+  resizeObserver.observe(el.value)
+
+  const ensureInitialResize = () => {
+    let frames = 0
+    const tick = () => {
+      if (!chart || !el.value) return
+      const rect = el.value.getBoundingClientRect()
+      if (rect.width > 10 && rect.height > 10) chart.resize()
+      frames++
+      if (frames < 30 && (rect.width <= 10 || rect.height <= 10)) {
+        requestAnimationFrame(tick)
+        return
+      }
+      if (frames < 3) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+  ensureInitialResize()
+
   refresh()
 })
 
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', () => chart?.resize())
+  resizeObserver?.disconnect()
   chart?.dispose()
   chart = null
 })
@@ -213,6 +281,16 @@ watch(() => [props.metricIds.join(','), props.timeRange.start, props.timeRange.e
 </script>
 
 <style scoped>
+.device-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+
 .chart-box {
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -335,5 +413,10 @@ watch(() => [props.metricIds.join(','), props.timeRange.start, props.timeRange.e
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
+}
+
+.chart-el {
+  position: absolute;
+  inset: 0;
 }
 </style>
