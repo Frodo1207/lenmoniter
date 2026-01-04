@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>软件团队问题单看板</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg-body: #f3f4f6;
+      --bg-card: #ffffff;
+      --text-main: #111827;
+      --text-secondary: #6b7280;
+      --text-tertiary: #9ca3af;
+      --border-color: #e5e7eb;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+
+    body {
+      background: var(--bg-body);
+      color: var(--text-main);
+      padding: 32px;
+      min-height: 100vh;
+    }
+
+    .app-container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Header Section */
+    .header {
+      margin-bottom: 24px;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+
+    .title-group h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+
+    .title-group p {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .stats-cards {
+      display: flex;
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      min-width: 120px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .stat-value.highlight {
+      color: var(--primary);
+    }
+
+    .stat-value.critical {
+      color: #ef4444;
+    }
+
+    /* Filters Section */
+    .controls-card {
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      align-items: flex-end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .filter-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .input-control {
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      font-size: 13px;
+      color: var(--text-main);
+      background: #fff;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .input-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .multi-select-wrapper {
+      position: relative;
+    }
+    
+    .multi-select-display {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .multi-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      box-shadow: var(--shadow-md);
+      margin-top: 4px;
+      z-index: 10;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+
+    .multi-select-option {
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 4px;
+    }
+
+    .multi-select-option:hover {
+      background: #f3f4f6;
+    }
+
+    .checkbox {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid #d1d5db;
+      display: grid;
+      place-items: center;
+    }
+
+    .multi-select-option.selected .checkbox {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+
+    .multi-select-option.selected .checkbox::after {
+      content: "✓";
+      color: #fff;
+      font-size: 10px;
+    }
+
+    /* Table Section */
+    .table-card {
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+
+    thead th {
+      background: #f9fafb;
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.2s;
+      user-select: none;
+    }
+
+    thead th:hover {
+      background: #f3f4f6;
+    }
+
+    thead th.no-sort {
+      cursor: default;
+    }
+
+    thead th.no-sort:hover {
+      background: #f9fafb;
+    }
+
+    .sort-icon {
+      display: inline-block;
+      margin-left: 4px;
+      width: 8px;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    th.sort-active .sort-icon {
+      color: var(--primary);
+    }
+
+    tbody tr {
+      transition: background 0.15s;
+    }
+
+    tbody tr:hover {
+      background: #f9fafb;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Custom Cell Styles */
+    .cell-id {
+      font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .cell-title {
+      font-weight: 500;
+      color: var(--text-main);
+      max-width: 400px;
+      white-space: normal;
+      line-height: 1.4;
+    }
+
+    .group-header {
+      background: #f3f4f6;
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-main);
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .group-count {
+      background: #e5e7eb;
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+    }
+
+    /* Badges & Pills */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    /* Severity Styles */
+    .sev-critical { background: #fef2f2; color: #b91c1c; }
+    .sev-critical .badge-dot { background: #ef4444; }
+    
+    .sev-high { background: #fff7ed; color: #c2410c; }
+    .sev-high .badge-dot { background: #f97316; }
+    
+    .sev-medium { background: #f0fdf4; color: #15803d; }
+    .sev-medium .badge-dot { background: #22c55e; }
+    
+    .sev-low { background: #f3f4f6; color: #4b5563; }
+    .sev-low .badge-dot { background: #9ca3af; }
+
+    /* Status Styles */
+    .status-open { color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; }
+    .status-progress { color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; }
+    .status-review { color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; }
+    .status-done { color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; }
+
+    .user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px 4px 4px;
+      background: #f3f4f6;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--text-main);
+    }
+
+    .user-avatar {
+      width: 20px;
+      height: 20px;
+      background: #d1d5db;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .domain-tag {
+      font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      padding: 2px 6px;
+      background: #eef2ff;
+      color: #4338ca;
+      border-radius: 4px;
+      border: 1px solid #e0e7ff;
+    }
+
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 16px; }
+      .header-top { flex-direction: column; gap: 16px; }
+      .stats-cards { width: 100%; overflow-x: auto; padding-bottom: 4px; }
+      .filter-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="app-container">
+      <!-- Header -->
+      <div class="header">
+        <div class="header-top">
+          <div class="title-group">
+            <h1>问题单看板</h1>
+            <p>追踪跨领域、跨子系统的所有技术问题与缺陷</p>
+          </div>
+          <div class="stats-cards">
+            <div class="stat-card">
+              <div class="stat-label">总问题数</div>
+              <div class="stat-value">{{ tickets.length }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">当前筛选</div>
+              <div class="stat-value highlight">{{ filteredTickets.length }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">未解决</div>
+              <div class="stat-value">{{ stats.openCount }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">严重/致命</div>
+              <div class="stat-value critical">{{ stats.highOrCritical }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="controls-card">
+        <div class="filter-grid">
+          <div class="filter-group">
+            <label class="filter-label">搜索</label>
+            <input
+              v-model.trim="filters.keyword"
+              class="input-control"
+              placeholder="搜索标题或编号..."
+            />
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">领域（可多选）</label>
+            <div class="multi-select-wrapper">
+              <div 
+                class="input-control multi-select-display"
+                @click.stop="showDomainDropdown = !showDomainDropdown"
+              >
+                <span>{{ domainDisplayText }}</span>
+                <span style="font-size: 10px; color: #9ca3af;">▼</span>
+              </div>
+              <div v-if="showDomainDropdown" class="multi-select-dropdown" @click.stop>
+                <div 
+                  v-for="d in domainOptions" 
+                  :key="d" 
+                  class="multi-select-option"
+                  :class="{ selected: filters.domains.includes(d) }"
+                  @click="toggleDomain(d)"
+                >
+                  <div class="checkbox"></div>
+                  {{ d }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">严重程度</label>
+            <select v-model="filters.severity" class="input-control">
+              <option value="">全部等级</option>
+              <option v-for="s in severityOptions" :key="s.value" :value="s.value">
+                {{ s.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">状态</label>
+            <select v-model="filters.status" class="input-control">
+              <option value="">全部状态</option>
+              <option v-for="s in statusOptions" :key="s.value" :value="s.value">
+                {{ s.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">子系统</label>
+            <select v-model="filters.subsystem" class="input-control">
+              <option value="">全部子系统</option>
+              <option v-for="s in subsystemOptions" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">责任人</label>
+            <input
+              v-model.trim="filters.owner"
+              class="input-control"
+              placeholder="输入姓名..."
+            />
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">视图模式</label>
+            <select v-model="viewMode" class="input-control" style="font-weight: 500; color: var(--primary);">
+              <option value="merged">合并视图</option>
+              <option value="grouped">按领域分组</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table Content -->
+      <div class="table-card">
+        <!-- Merged View -->
+        <div v-if="viewMode === 'merged'" class="table-container">
+          <table-content 
+            :tickets="filteredTickets" 
+            :sort-key="sortKey" 
+            :sort-dir="sortDir"
+            @sort="sortBy"
+          ></table-content>
+        </div>
+
+        <!-- Grouped View -->
+        <div v-else>
+          <div v-if="groupedTickets.length === 0" class="empty-state">
+            没有符合条件的问题单
+          </div>
+          <div v-for="group in groupedTickets" :key="group.domain">
+            <div class="group-header">
+              <span>{{ group.domain }}</span>
+              <span class="group-count">{{ group.list.length }}</span>
+            </div>
+            <div class="table-container">
+              <table-content 
+                :tickets="group.list" 
+                :sort-key="sortKey" 
+                :sort-dir="sortDir"
+                @sort="sortBy"
+              ></table-content>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, computed, ref, onMounted, onUnmounted } = Vue
+
+    // Component for Table Content to reuse in both views
+    const TableContent = {
+      props: ['tickets', 'sortKey', 'sortDir'],
+      emits: ['sort'],
+      template: `
+        <table v-if="tickets.length">
+          <thead>
+            <tr>
+              <th @click="$emit('sort', 'id')" :class="{ 'sort-active': sortKey === 'id' }">
+                问题单号 <span class="sort-icon">{{ icon('id') }}</span>
+              </th>
+              <th class="no-sort">标题</th>
+              <th @click="$emit('sort', 'domain')" :class="{ 'sort-active': sortKey === 'domain' }">
+                领域 <span class="sort-icon">{{ icon('domain') }}</span>
+              </th>
+              <th @click="$emit('sort', 'severity')" :class="{ 'sort-active': sortKey === 'severity' }">
+                严重程度 <span class="sort-icon">{{ icon('severity') }}</span>
+              </th>
+              <th @click="$emit('sort', 'status')" :class="{ 'sort-active': sortKey === 'status' }">
+                状态 <span class="sort-icon">{{ icon('status') }}</span>
+              </th>
+              <th @click="$emit('sort', 'owner')" :class="{ 'sort-active': sortKey === 'owner' }">
+                责任人 <span class="sort-icon">{{ icon('owner') }}</span>
+              </th>
+              <th @click="$emit('sort', 'subsystem')" :class="{ 'sort-active': sortKey === 'subsystem' }">
+                子系统 <span class="sort-icon">{{ icon('subsystem') }}</span>
+              </th>
+              <th @click="$emit('sort', 'stayDays')" :class="{ 'sort-active': sortKey === 'stayDays' }">
+                停留(天) <span class="sort-icon">{{ icon('stayDays') }}</span>
+              </th>
+              <th @click="$emit('sort', 'updatedAt')" :class="{ 'sort-active': sortKey === 'updatedAt' }">
+                更新时间 <span class="sort-icon">{{ icon('updatedAt') }}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in tickets" :key="t.id">
+              <td class="cell-id">{{ t.id }}</td>
+              <td class="cell-title">{{ t.title }}</td>
+              <td><span class="domain-tag">{{ t.domain }}</span></td>
+              <td>
+                <span class="badge" :class="'sev-' + t.severity">
+                  <span class="badge-dot"></span>
+                  {{ severityLabel(t.severity) }}
+                </span>
+              </td>
+              <td>
+                <span class="badge" :class="'status-' + t.status">
+                  {{ statusLabel(t.status) }}
+                </span>
+              </td>
+              <td>
+                <span class="user-pill">
+                  <span class="user-avatar">{{ t.owner[0] }}</span>
+                  {{ t.owner }}
+                </span>
+              </td>
+              <td style="color: var(--text-secondary);">{{ t.subsystem }}</td>
+              <td style="font-variant-numeric: tabular-nums;">{{ t.stayDays }}</td>
+              <td style="color: var(--text-tertiary); font-size: 12px;">{{ t.updatedAt }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state">
+          暂无数据
+        </div>
+      `,
+      setup(props) {
+        const severityOptions = [
+          { value: "critical", label: "致命" },
+          { value: "high", label: "严重" },
+          { value: "medium", label: "一般" },
+          { value: "low", label: "提示" }
+        ]
+        const statusOptions = [
+          { value: "open", label: "打开" },
+          { value: "progress", label: "处理中" },
+          { value: "review", label: "待验证" },
+          { value: "done", label: "已关闭" }
+        ]
+
+        function icon(key) {
+          if (props.sortKey !== key) return "↕"
+          return props.sortDir === "asc" ? "↑" : "↓"
+        }
+
+        function severityLabel(v) {
+          const item = severityOptions.find(s => s.value === v)
+          return item ? item.label : v
+        }
+
+        function statusLabel(v) {
+          const item = statusOptions.find(s => s.value === v)
+          return item ? item.label : v
+        }
+
+        return { icon, severityLabel, statusLabel }
+      }
+    }
+
+    createApp({
+      components: { TableContent },
+      setup() {
+        // Mock Data
+        const tickets = ref([
+          {
+            id: "BUG-001",
+            title: "线上支付回调偶发失败，导致订单状态不一致",
+            domain: "OPT-POTB-LSI V500R500",
+            severity: "critical",
+            status: "open",
+            owner: "张三",
+            subsystem: "支付网关",
+            stayDays: 2,
+            updatedAt: "2026-01-03 10:21"
+          },
+          {
+            id: "BUG-002",
+            title: "移动端登录页在弱网环境下加载白屏",
+            domain: "OPT-POTB-LSI V500R500",
+            severity: "high",
+            status: "progress",
+            owner: "李四",
+            subsystem: "移动端-登陆",
+            stayDays: 5,
+            updatedAt: "2026-01-04 09:00"
+          },
+          {
+            id: "BUG-003",
+            title: "报表导出功能内存溢出风险",
+            domain: "SYS-CORE",
+            severity: "medium",
+            status: "review",
+            owner: "王五",
+            subsystem: "报表服务",
+            stayDays: 1,
+            updatedAt: "2026-01-03 18:11"
+          },
+          {
+            id: "BUG-004",
+            title: "运营后台文案修正",
+            domain: "OPS-BACKEND",
+            severity: "low",
+            status: "done",
+            owner: "赵六",
+            subsystem: "运营后台",
+            stayDays: 3,
+            updatedAt: "2026-01-02 14:33"
+          },
+          {
+            id: "BUG-005",
+            title: "任务调度器死锁问题排查",
+            domain: "OPT-POTB-LSI V600R100",
+            severity: "high",
+            status: "open",
+            owner: "张三",
+            subsystem: "任务调度",
+            stayDays: 4,
+            updatedAt: "2026-01-04 08:45"
+          },
+          {
+            id: "BUG-006",
+            title: "V500R500 兼容性测试问题汇总",
+            domain: "OPT-POTB-LSI V500R500",
+            severity: "medium",
+            status: "open",
+            owner: "钱七",
+            subsystem: "兼容性测试",
+            stayDays: 7,
+            updatedAt: "2026-01-01 09:00"
+          }
+        ])
+
+        const filters = ref({
+          keyword: "",
+          domains: [], // Multi-select
+          severity: "",
+          status: "",
+          subsystem: "",
+          owner: ""
+        })
+
+        const viewMode = ref("merged") // merged | grouped
+        const showDomainDropdown = ref(false)
+
+        const severityOptions = [
+          { value: "critical", label: "致命" },
+          { value: "high", label: "严重" },
+          { value: "medium", label: "一般" },
+          { value: "low", label: "提示" }
+        ]
+
+        const statusOptions = [
+          { value: "open", label: "打开" },
+          { value: "progress", label: "处理中" },
+          { value: "review", label: "待验证" },
+          { value: "done", label: "已关闭" }
+        ]
+
+        const sortKey = ref("stayDays")
+        const sortDir = ref("desc")
+
+        const domainOptions = computed(() => Array.from(new Set(tickets.value.map(t => t.domain))).sort())
+        const subsystemOptions = computed(() => Array.from(new Set(tickets.value.map(t => t.subsystem))).sort())
+
+        const domainDisplayText = computed(() => {
+          const len = filters.value.domains.length
+          if (len === 0) return "全部领域"
+          if (len === 1) return filters.value.domains[0]
+          return `已选 ${len} 个领域`
+        })
+
+        // Close dropdown when clicking outside
+        const closeDropdown = () => { showDomainDropdown.value = false }
+        onMounted(() => document.addEventListener('click', closeDropdown))
+        onUnmounted(() => document.removeEventListener('click', closeDropdown))
+
+        function toggleDomain(d) {
+          const idx = filters.value.domains.indexOf(d)
+          if (idx > -1) {
+            filters.value.domains.splice(idx, 1)
+          } else {
+            filters.value.domains.push(d)
+          }
+        }
+
+        const filteredTickets = computed(() => {
+          const f = filters.value
+          const keyword = f.keyword.toLowerCase()
+          const owner = f.owner.toLowerCase()
+
+          let list = tickets.value.filter(t => {
+            if (keyword && !t.id.toLowerCase().includes(keyword) && !t.title.toLowerCase().includes(keyword)) return false
+            if (f.domains.length > 0 && !f.domains.includes(t.domain)) return false
+            if (f.severity && t.severity !== f.severity) return false
+            if (f.status && t.status !== f.status) return false
+            if (f.subsystem && t.subsystem !== f.subsystem) return false
+            if (owner && !t.owner.toLowerCase().includes(owner)) return false
+            return true
+          })
+
+          return sortList(list)
+        })
+
+        function sortList(list) {
+          return list.slice().sort((a, b) => {
+            const key = sortKey.value
+            const dir = sortDir.value === "asc" ? 1 : -1
+            
+            // Custom sort orders
+            const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 }
+            const statusOrder = { open: 4, progress: 3, review: 2, done: 1 }
+
+            if (key === "severity") return (severityOrder[a.severity] - severityOrder[b.severity]) * dir
+            if (key === "status") return (statusOrder[a.status] - statusOrder[b.status]) * dir
+            if (key === "stayDays") return (a.stayDays - b.stayDays) * dir
+            
+            // String comparison for others
+            const valA = a[key] || ""
+            const valB = b[key] || ""
+            return valA.toString().localeCompare(valB.toString(), "zh-Hans-CN") * dir
+          })
+        }
+
+        const groupedTickets = computed(() => {
+          const list = filteredTickets.value
+          const groups = {}
+          list.forEach(t => {
+            if (!groups[t.domain]) groups[t.domain] = []
+            groups[t.domain].push(t)
+          })
+          return Object.keys(groups).sort().map(d => ({
+            domain: d,
+            list: groups[d]
+          }))
+        })
+
+        const stats = computed(() => {
+          const openCount = tickets.value.filter(t => t.status !== "done").length
+          const highOrCritical = tickets.value.filter(t => t.severity === "high" || t.severity === "critical").length
+          return { openCount, highOrCritical }
+        })
+
+        function sortBy(key) {
+          if (sortKey.value === key) {
+            sortDir.value = sortDir.value === "asc" ? "desc" : "asc"
+          } else {
+            sortKey.value = key
+            sortDir.value = "asc"
+          }
+        }
+
+        return {
+          tickets,
+          filters,
+          viewMode,
+          severityOptions,
+          statusOptions,
+          subsystemOptions,
+          domainOptions,
+          filteredTickets,
+          groupedTickets,
+          stats,
+          sortKey,
+          sortDir,
+          sortBy,
+          showDomainDropdown,
+          toggleDomain,
+          domainDisplayText
+        }
+      }
+    }).mount("#app")
+  </script>
+</body>
+</html>
